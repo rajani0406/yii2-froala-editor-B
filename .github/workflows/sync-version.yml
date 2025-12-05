@@ -38,12 +38,12 @@ jobs:
           echo "Local version: $CURRENT | Incoming: $VERSION"
 
       # -----------------------------
-      # Skip if versions match
+      # STOP JOB IF VERSION MATCHES
       # -----------------------------
-      - name: Check if version is different
+      - name: Skip if version matches
         run: |
           if [ "$VERSION" = "$CURRENT_VERSION" ]; then
-            echo "Versions match → No update needed."
+            echo "✔ Versions match → No action required."
             exit 0
           fi
 
@@ -57,7 +57,7 @@ jobs:
           echo "BRANCH=$BRANCH" >> $GITHUB_ENV
 
       # -----------------------------
-      # Update composer.json ONLY
+      # Update composer.json
       # -----------------------------
       - name: Update composer.json
         run: |
@@ -66,6 +66,7 @@ jobs:
 
       # -----------------------------
       # Commit and Push
+      # ADD "release: yes" as required
       # -----------------------------
       - name: Commit and Push
         run: |
@@ -73,7 +74,7 @@ jobs:
           git config user.email "ci-bot@github.com"
 
           git add composer.json
-          git commit -m "chore: sync version to v${VERSION} (auto-sync)"
+          git commit -m "chore: sync version to v${VERSION} (release: yes)"
           git push origin "$BRANCH"
 
       # -----------------------------
@@ -82,12 +83,13 @@ jobs:
       - name: Create Pull Request
         uses: peter-evans/create-pull-request@v5
         with:
-          token: ${{ secrets.DISPATCH }}  # Can use GITHUB_TOKEN if repo is in same org
-          commit-message: ""
+          token: ${{ secrets.DISPATCH }}
           title: "Sync version to v${{ env.VERSION }}"
           body: |
             Auto-synced version update from **main repository**.
 
             Updated version to **v${{ env.VERSION }}** in composer.json.
+
+            **release: yes**
           branch: ${{ env.BRANCH }}
           base: main
