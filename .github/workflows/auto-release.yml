@@ -17,43 +17,33 @@ jobs:
   require_release_yes:
     runs-on: ubuntu-latest
     name: Ensure release approval commit exists
-
     steps:
-      - name: Show commit messages
+      - name: Show PR commit messages
         run: |
-          echo "Reading PR commit messages..."
-
-          COMMITS=$(gh api repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/commits \
-            --jq '.[].commit.message')
-
+          echo "Fetching PR commit messages..."
+          COMMITS=$(gh api repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/commits --jq '.[].commit.message')
           echo "Commits in PR:"
           echo "$COMMITS"
 
           # Normalize for comparison
           COMMITS_LOWER=$(echo "$COMMITS" | tr '[:upper:]' '[:lower:]')
 
-          # EXACT match check
           if echo "$COMMITS_LOWER" | grep -qx "release: yes"; then
               echo "✔ Found required release commit"
-              exit 0
+          else
+              echo "❌ ERROR: No 'release: yes' commit found."
+              echo "To allow merging, push this empty commit:"
+              echo "    git commit --allow-empty -m \"release: yes\""
+              echo "    git push"
+              exit 1
           fi
-
-          echo "❌ ERROR: You cannot merge this PR."
-          echo "To allow merging, push this empty commit:"
-          echo ""
-          echo "    git commit --allow-empty -m \"release: yes\""
-          echo "    git push"
-          echo ""
-          exit 1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   create_release:
-    # Only run after merge AND commit release: yes exists
-    if: >
-      github.event.pull_request.merged == true
+    if: github.event.pull_request.merged == true
     runs-on: ubuntu-latest
-
+    needs: require_release_yes
     steps:
       - name: Checkout main
         uses: actions/checkout@v4
