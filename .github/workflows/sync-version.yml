@@ -13,19 +13,33 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      # -----------------------------
+      # Checkout repository
+      # -----------------------------
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      # -----------------------------
+      # Read incoming version
+      # -----------------------------
       - name: Set VERSION from dispatch event
         run: |
           echo "VERSION=${{ github.event.client_payload.version }}" >> $GITHUB_ENV
+          echo "Incoming version: $VERSION"
 
+      # -----------------------------
+      # Read local version from composer.json
+      # -----------------------------
       - name: Read current version
         id: local
         run: |
           CURRENT=$(jq -r '.version' composer.json)
           echo "CURRENT_VERSION=$CURRENT" >> $GITHUB_ENV
+          echo "Local version: $CURRENT | Incoming: $VERSION"
 
+      # -----------------------------
+      # STOP JOB IF VERSION MATCHES
+      # -----------------------------
       - name: Skip if version matches
         run: |
           if [ "$VERSION" = "$CURRENT_VERSION" ]; then
@@ -33,25 +47,39 @@ jobs:
             exit 0
           fi
 
+      # -----------------------------
+      # Create feature branch
+      # -----------------------------
       - name: Create new branch
         run: |
           BRANCH="sync-version-v${VERSION}"
           git checkout -b "$BRANCH"
           echo "BRANCH=$BRANCH" >> $GITHUB_ENV
 
+      # -----------------------------
+      # Update composer.json
+      # -----------------------------
       - name: Update composer.json
         run: |
           jq ".version = \"$VERSION\"" composer.json > tmp.json
           mv tmp.json composer.json
 
-      # ⬇ REMOVE MANUAL COMMIT — let create-pull-request handle it ⬇
+      # Commit + push
+      - name: Commit and Push
+        run: |
+          git config user.name "GitHub Actions Bot"
+          git config user.email "ci-bot@github.com"
+          git add composer.json
+          git commit -m "chore: sync version to v${VERSION}"
+          git push origin "$BRANCH"
 
-      - name: Create Pull Request
-        uses: peter-evans/create-pull-request@v5
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          title: "Sync version to v${{ env.VERSION }}"
-          body: "Auto-synced version update."
-          branch: ${{ env.BRANCH }}
-          base: main
-          delete-branch: false
+      # Create Pull Request (NO auto commit, NO auto overwrite)
+      - name: Create Pull Request using GH CLI
+        run: |
+          gh pr create \
+            --base main \
+            --head "$BRANCH" \
+            --title "Sync version to v${VERSION}" \
+            --body "Auto-synced version update."
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
