@@ -1,68 +1,93 @@
 name: Auto Release on Merge
- 
+
 on:
   pull_request:
     types: [opened, synchronize, reopened, closed]
     branches:
       - main
-      
+
   workflow_run:
     workflows: ["Sync Version from Main Repo"]
     types: [completed]
- 
+
 permissions:
   contents: write
- 
+  pull-requests: write
+
 jobs:
- 
+
   validate_pr:
-    # Run validation only when PR is NOT merged yet
-    if: github.event.pull_request.merged == false
+    # Only run when PR event, not workflow_run
+    if: github.event_name == 'pull_request' && github.event.pull_request.merged == false
     runs-on: ubuntu-latest
- 
+
     steps:
-      - name: Check commit message for release flag
-        run: |
-          TITLE="${{ github.event.pull_request.title }}"
-          BODY="${{ github.event.pull_request.body }}"
- 
-          if echo "$TITLE" | grep -iq "release: yes"; then
-            echo "Commit message valid."
-            exit 0
-          fi
- 
-          if echo "$BODY" | grep -iq "release: yes"; then
-            echo "Commit message valid."
-            exit 0
-          fi
- 
-          echo "❌ ERROR: PR cannot be merged because it does not contain 'release: yes'"
-          exit 1
- 
- 
+      - name: Validate commit messages for release flag
+        id: validate
+        uses: actions/github-script@v6
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const { context, github } = require("@actions/github");
+            const prNumber = context.payload.pull_request.number;
+
+            // Fetch PR commits
+            const commitsResp = await github.rest.pulls.listCommits({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: prNumber
+            });
+
+            const commits = commitsResp.data.map(c => c.commit.message);
+            const hasRelease = commits.some(msg => /release:\s*yes/i.test(msg));
+
+            if (!hasRelease) {
+              // Create failed check
+              await github.checks.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                name: "validate_pr",
+                head_sha: context.payload.pull_request.head.sha,
+                status: "completed",
+                conclusion: "failure",
+                output: {
+                  title: "Commit Validation Failed",
+                  summary: "At least one commit must contain 'release: yes'"
+                }
+              });
+
+              core.setOutput("valid", "false");
+              return;
+            }
+
+            core.setOutput("valid", "true");
+
+      - name: Stop workflow if invalid
+        if: steps.validate.outputs.valid == 'false'
+        run: exit 1
+
+
   create_release:
-    # Run only when PR is merged AND has release flag
+    # Run when:
+    # 1. PR merged  OR
+    # 2. Sync Version workflow completed
     if: >
-      github.event.pull_request.merged == true &&
-      (
-        contains(github.event.pull_request.title, 'release: yes') ||
-        contains(github.event.pull_request.body, 'release: yes')
-      )
+      (github.event_name == 'pull_request' && github.event.pull_request.merged == true) ||
+      (github.event_name == 'workflow_run')
     runs-on: ubuntu-latest
- 
+
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
         with:
           ref: main
- 
+
       - name: Extract version from composer.json
         id: version
         run: |
           VERSION=$(jq -r '.version' composer.json)
           echo "VERSION=$VERSION" >> $GITHUB_ENV
-          echo "Detected version: $VERSION"
- 
+
       - name: Create Release
         uses: actions/create-release@v1
         env:
@@ -70,5 +95,4 @@ jobs:
         with:
           tag_name: "v${{ env.VERSION }}"
           release_name: "Release v${{ env.VERSION }}"
-          body: |
-            Auto-release generated for version v${{ env.VERSION }}
+          body: "Auto-release generated for version v${{ env.VERSION }}"
