@@ -2,9 +2,13 @@ name: Auto Release on Merge
 
 on:
   pull_request:
-    types: [opened, synchronize, edited]
+    types: [synchronize, closed]
     branches:
       - main
+
+concurrency:
+  group: pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
 
 permissions:
   contents: write
