@@ -4,6 +4,10 @@ on:
   pull_request:
     types: [opened, synchronize, reopened]
 
+  workflow_run:
+    workflows: ["Sync Version from Main Repo"]
+    types: [completed]
+
 permissions:
   contents: write
   pull-requests: write
