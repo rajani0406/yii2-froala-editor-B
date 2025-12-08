@@ -12,52 +12,52 @@ permissions:
 jobs:
 
   validate_pr:
-    # Run validation only when PR is NOT merged yet
     if: github.event.pull_request.merged == false
     runs-on: ubuntu-latest
 
     steps:
-      - name: Check commit message for release flag
+      - name: Check commit messages for release flag
         run: |
-          TITLE="${{ github.event.pull_request.title }}"
-          BODY="${{ github.event.pull_request.body }}"
+          echo "Checking commit messages..."
 
-          if echo "$TITLE" | grep -iq "release: yes"; then
-            echo "Commit message valid."
+          # Get all commit messages in PR
+          MESSAGES=$(gh api repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/commits --jq '.[].commit.message')
+
+          echo "Commit messages:"
+          echo "$MESSAGES"
+
+          # Lowercase for easier matching
+          MESSAGES_NORM=$(echo "$MESSAGES" | tr '[:upper:]' '[:lower:]')
+
+          # Require EXACTLY a commit message containing release: yes
+          if echo "$MESSAGES_NORM" | grep -Eq "^release: yes$"; then
+            echo "✔ Valid release commit found"
             exit 0
           fi
 
-          if echo "$BODY" | grep -iq "release: yes"; then
-            echo "Commit message valid."
-            exit 0
-          fi
-
-          echo "❌ ERROR: PR cannot be merged because it does not contain 'release: yes'"
+          echo "❌ ERROR: To merge this PR, you MUST push an empty commit:"
+          echo "    git commit --allow-empty -m \"release: yes\""
+          echo "    git push"
           exit 1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
 
   create_release:
-    # Run only when PR is merged AND has release flag
+    # Only run after merge AND commit release: yes exists
     if: >
-      github.event.pull_request.merged == true &&
-      (
-        contains(github.event.pull_request.title, 'release: yes') ||
-        contains(github.event.pull_request.body, 'release: yes')
-      )
+      github.event.pull_request.merged == true
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repo
+      - name: Checkout main
         uses: actions/checkout@v4
-        with:
-          ref: main
 
       - name: Extract version from composer.json
         id: version
         run: |
           VERSION=$(jq -r '.version' composer.json)
           echo "VERSION=$VERSION" >> $GITHUB_ENV
-          echo "Detected version: $VERSION"
 
       - name: Create Release
         uses: actions/create-release@v1
@@ -66,5 +66,4 @@ jobs:
         with:
           tag_name: "v${{ env.VERSION }}"
           release_name: "Release v${{ env.VERSION }}"
-          body: |
-            Auto-release generated for version v${{ env.VERSION }}
+          body: "Auto-release for version v${{ env.VERSION }}"
