@@ -1,51 +1,46 @@
-name: Auto Release on Merge
+name: Auto Release Gate
 
 on:
   pull_request:
-    types: [synchronize, closed]
-    branches:
-      - main
-
-concurrency:
-  group: pr-${{ github.event.pull_request.number }}
-  cancel-in-progress: true
+    types: [opened, synchronize, reopened]
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-
-  validate_pr:
-    if: github.event.pull_request.merged == false
+  require_release_yes:
     runs-on: ubuntu-latest
+    name: Ensure release approval commit exists
 
     steps:
-      - name: Check commit messages for release flag
+      - name: Show commit messages
         run: |
-          echo "Checking commit messages..."
+          echo "Reading PR commit messages..."
 
-          # Get all commit messages in PR
-          MESSAGES=$(gh api repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/commits --jq '.[].commit.message')
+          COMMITS=$(gh api repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/commits \
+            --jq '.[].commit.message')
 
-          echo "Commit messages:"
-          echo "$MESSAGES"
+          echo "Commits in PR:"
+          echo "$COMMITS"
 
-          # Lowercase for easier matching
-          MESSAGES_NORM=$(echo "$MESSAGES" | tr '[:upper:]' '[:lower:]')
+          # Normalize for comparison
+          COMMITS_LOWER=$(echo "$COMMITS" | tr '[:upper:]' '[:lower:]')
 
-          # Require EXACTLY a commit message containing release: yes
-          if echo "$MESSAGES_NORM" | grep -Eq "^release: yes$"; then
-            echo "✔ Valid release commit found"
-            exit 0
+          # EXACT match check
+          if echo "$COMMITS_LOWER" | grep -qx "release: yes"; then
+              echo "✔ Found required release commit"
+              exit 0
           fi
 
-          echo "❌ ERROR: To merge this PR, you MUST push an empty commit:"
+          echo "❌ ERROR: You cannot merge this PR."
+          echo "To allow merging, push this empty commit:"
+          echo ""
           echo "    git commit --allow-empty -m \"release: yes\""
           echo "    git push"
+          echo ""
           exit 1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
 
   create_release:
     # Only run after merge AND commit release: yes exists
