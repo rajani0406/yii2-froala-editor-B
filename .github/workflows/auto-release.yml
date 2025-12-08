@@ -1,69 +1,68 @@
-name: Auto Release Gate
-
+name: Auto Release on Merge
+ 
 on:
   pull_request:
-    types: [opened, synchronize, reopened]
-
+    types: [opened, synchronize, reopened, closed]
+    branches:
+      - main
+      
   workflow_run:
     workflows: ["Sync Version from Main Repo"]
     types: [completed]
-
+ 
 permissions:
   contents: write
-  pull-requests: write
-  actions: write
-
+ 
 jobs:
-  require_release_yes:
-    if: github.event_name == 'pull_request'
+ 
+  validate_pr:
+    # Run validation only when PR is NOT merged yet
+    if: github.event.pull_request.merged == false
     runs-on: ubuntu-latest
-    name: Ensure release approval commit exists
+ 
     steps:
-      - name: Checkout PR
-        uses: actions/checkout@v4
-
-      - name: Check commit messages for "release: yes"
+      - name: Check commit message for release flag
         run: |
-          echo "Checking commits in this PR..."
-          
-          if [ -z "${{ github.event.pull_request.number }}" ]; then
-            echo "❌ This job only runs on pull_request events."
-            exit 1
+          TITLE="${{ github.event.pull_request.title }}"
+          BODY="${{ github.event.pull_request.body }}"
+ 
+          if echo "$TITLE" | grep -iq "release: yes"; then
+            echo "Commit message valid."
+            exit 0
           fi
-
-          git fetch origin +refs/pull/${{ github.event.pull_request.number }}/merge
-          RELEASE_FOUND=false
-          for msg in $(git log FETCH_HEAD --pretty=format:"%s"); do
-            if [[ "${msg,,}" == "release: yes" ]]; then
-              RELEASE_FOUND=true
-              break
-            fi
-          done
-
-          if [ "$RELEASE_FOUND" = true ]; then
-            echo "✔ Found required release commit"
-          else
-            echo "❌ ERROR: No 'release: yes' commit found."
-            echo "To allow merging, push this empty commit:"
-            echo "    git commit --allow-empty -m \"release: yes\""
-            echo "    git push"
-            exit 1
+ 
+          if echo "$BODY" | grep -iq "release: yes"; then
+            echo "Commit message valid."
+            exit 0
           fi
-
+ 
+          echo "❌ ERROR: PR cannot be merged because it does not contain 'release: yes'"
+          exit 1
+ 
+ 
   create_release:
-    if: github.event_name == 'workflow_run'
+    # Run only when PR is merged AND has release flag
+    if: >
+      github.event.pull_request.merged == true &&
+      (
+        contains(github.event.pull_request.title, 'release: yes') ||
+        contains(github.event.pull_request.body, 'release: yes')
+      )
     runs-on: ubuntu-latest
-    needs: require_release_yes
+ 
     steps:
-      - name: Checkout main
+      - name: Checkout repo
         uses: actions/checkout@v4
-
+        with:
+          ref: main
+ 
       - name: Extract version from composer.json
         id: version
         run: |
           VERSION=$(jq -r '.version' composer.json)
           echo "VERSION=$VERSION" >> $GITHUB_ENV
-
+          echo "Detected version: $VERSION"
+ 
       - name: Create Release
         uses: actions/create-release@v1
         env:
@@ -71,4 +70,5 @@ jobs:
         with:
           tag_name: "v${{ env.VERSION }}"
           release_name: "Release v${{ env.VERSION }}"
-          body: "Auto-release for version v${{ env.VERSION }}"
+          body: |
+            Auto-release generated for version v${{ env.VERSION }}
