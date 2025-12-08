@@ -17,60 +17,60 @@ permissions:
 jobs:
 
   validate_pr:
-  if: github.event_name == 'pull_request' && !(github.event.action == 'closed' && github.event.pull_request.merged == true)
-  runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request' && !(github.event.action == 'closed' && github.event.pull_request.merged == true)
+    runs-on: ubuntu-latest
 
-  steps:
-    - name: Validate commit messages for release flag
-      id: validate
-      uses: actions/github-script@v6
-      with:
-        github-token: ${{ secrets.GITHUB_TOKEN }}
-        script: |
-          const { context, github } = require("@actions/github");
-          const prNumber = context.payload.pull_request.number;
+    steps:
+      - name: Validate commit messages for release flag
+        id: validate
+        uses: actions/github-script@v6
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const { context, github } = require("@actions/github");
+            const prNumber = context.payload.pull_request.number;
 
-          const commitsResp = await github.rest.pulls.listCommits({
-            owner: context.repo.owner,
-            repo: context.repo.repo,
-            pull_number: prNumber
-          });
-
-          const commits = commitsResp.data.map(c => c.commit.message);
-          const hasRelease = commits.some(msg => /release:\s*yes/i.test(msg));
-
-          if (!hasRelease) {
-            await github.checks.create({
+            const commitsResp = await github.rest.pulls.listCommits({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              name: "validate_pr",
-              head_sha: context.payload.pull_request.head.sha,
-              status: "completed",
-              conclusion: "failure",
-              output: {
-                title: "Commit Validation Failed",
-                summary: "At least one commit must contain 'release: yes'"
-              }
+              pull_number: prNumber
             });
 
-            core.setOutput("valid", "false");
-            return;
-          }
+            const commits = commitsResp.data.map(c => c.commit.message);
+            const hasRelease = commits.some(msg => /release:\s*yes/i.test(msg));
 
-          core.setOutput("valid", "true");
+            if (!hasRelease) {
+              await github.checks.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                name: "validate_pr",
+                head_sha: context.payload.pull_request.head.sha,
+                status: "completed",
+                conclusion: "failure",
+                output: {
+                  title: "Commit Validation Failed",
+                  summary: "At least one commit must contain 'release: yes'"
+                }
+              });
 
-    - name: Stop workflow if invalid
-      if: steps.validate.outputs.valid == 'false'
-      run: exit 1
+              core.setOutput("valid", "false");
+              return;
+            }
+
+            core.setOutput("valid", "true");
+
+      - name: Stop workflow if invalid
+        if: steps.validate.outputs.valid == 'false'
+        run: exit 1
+
 
   create_release:
-    # Run only when PR is merged AND has release flag
-    if: >
-      github.event.pull_request.merged == true &&
-      (
-        contains(github.event.pull_request.title, 'release: yes') ||
-        contains(github.event.pull_request.body, 'release: yes')
-      )
+    if: github.event_name == 'pull_request' &&
+        github.event.pull_request.merged == true &&
+        (
+          contains(github.event.pull_request.title, 'release: yes') ||
+          contains(github.event.pull_request.body, 'release: yes')
+        )
     runs-on: ubuntu-latest
 
     steps:
@@ -84,7 +84,6 @@ jobs:
         run: |
           VERSION=$(jq -r '.version' composer.json)
           echo "VERSION=$VERSION" >> $GITHUB_ENV
-          echo "Detected version: $VERSION"
 
       - name: Create Release
         uses: actions/create-release@v1
@@ -92,8 +91,5 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tag_name: "v${{ env.VERSION }}"
-          release_name: "Release v${{ env.VERSION }}"
-          body: |
-            Auto-release generated for version v${{ env.VERSION }}
           release_name: "Release v${{ env.VERSION }}"
           body: "Auto-release generated for version v${{ env.VERSION }}"
