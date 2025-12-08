@@ -18,27 +18,35 @@ jobs:
     runs-on: ubuntu-latest
     name: Ensure release approval commit exists
     steps:
-      - name: Show PR commit messages
+      - name: Checkout PR
+        uses: actions/checkout@v4
+
+      - name: Check commit messages for "release: yes"
         run: |
-          echo "Fetching PR commit messages..."
-          COMMITS=$(gh api repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/commits --jq '.[].commit.message')
-          echo "Commits in PR:"
-          echo "$COMMITS"
+          echo "Checking commits in this PR..."
+          
+          # Get commit messages from the PR using GitHub event payload
+          COMMITS=$(jq -r '.pull_request.commits_url' $GITHUB_EVENT_PATH)
+          
+          # Alternatively, just check all commits in the PR using git
+          git fetch origin +refs/pull/${{ github.event.pull_request.number }}/merge
+          RELEASE_FOUND=false
+          for msg in $(git log FETCH_HEAD --pretty=format:"%s"); do
+            if [[ "${msg,,}" == "release: yes" ]]; then
+              RELEASE_FOUND=true
+              break
+            fi
+          done
 
-          # Normalize for comparison
-          COMMITS_LOWER=$(echo "$COMMITS" | tr '[:upper:]' '[:lower:]')
-
-          if echo "$COMMITS_LOWER" | grep -qx "release: yes"; then
-              echo "✔ Found required release commit"
+          if [ "$RELEASE_FOUND" = true ]; then
+            echo "✔ Found required release commit"
           else
-              echo "❌ ERROR: No 'release: yes' commit found."
-              echo "To allow merging, push this empty commit:"
-              echo "    git commit --allow-empty -m \"release: yes\""
-              echo "    git push"
-              exit 1
+            echo "❌ ERROR: No 'release: yes' commit found."
+            echo "To allow merging, push this empty commit:"
+            echo "    git commit --allow-empty -m \"release: yes\""
+            echo "    git push"
+            exit 1
           fi
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   create_release:
     if: github.event.pull_request.merged == true
