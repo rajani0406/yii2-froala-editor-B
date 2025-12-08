@@ -65,12 +65,13 @@ jobs:
 
 
   create_release:
-    if: github.event_name == 'pull_request' &&
-        github.event.pull_request.merged == true &&
-        (
-          contains(github.event.pull_request.title, 'release: yes') ||
-          contains(github.event.pull_request.body, 'release: yes')
-        )
+    # Run only when PR is merged AND has release flag
+    if: >
+      github.event.pull_request.merged == true &&
+      (
+        contains(github.event.pull_request.title, 'release: yes') ||
+        contains(github.event.pull_request.body, 'release: yes')
+      )
     runs-on: ubuntu-latest
 
     steps:
