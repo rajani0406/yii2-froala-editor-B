@@ -13,14 +13,23 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      # -----------------------------
+      # Checkout repository
+      # -----------------------------
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      # -----------------------------
+      # Read incoming version
+      # -----------------------------
       - name: Set VERSION from dispatch event
         run: |
           echo "VERSION=${{ github.event.client_payload.version }}" >> $GITHUB_ENV
           echo "Incoming version: $VERSION"
 
+      # -----------------------------
+      # Read local version from composer.json
+      # -----------------------------
       - name: Read current version
         id: local
         run: |
@@ -28,40 +37,38 @@ jobs:
           echo "CURRENT_VERSION=$CURRENT" >> $GITHUB_ENV
           echo "Local version: $CURRENT | Incoming: $VERSION"
 
-      # -------------------------------------------
-      # Check if versions match → decide skip flag
-      # -------------------------------------------
-      - name: Determine if sync needed
-        id: check
+      # -----------------------------
+      # STOP JOB IF VERSION MATCHES
+      # -----------------------------
+      - name: Skip if version matches
         run: |
           if [ "$VERSION" = "$CURRENT_VERSION" ]; then
-            echo "✔ Versions match → skipping update."
-            echo "skip=true" >> $GITHUB_OUTPUT
-          else
-            echo "skip=false" >> $GITHUB_OUTPUT
+            echo "✔ Versions match → No action required."
+            exit 0
           fi
 
-      # -------------------------------------------
-      # Branch creation (only if skip=false)
-      # -------------------------------------------
+      # -----------------------------
+      # Create feature branch
+      # -----------------------------
       - name: Create new branch
-        if: steps.check.outputs.skip == 'false'
         run: |
           BRANCH="sync-version-v${VERSION}"
           git checkout -b "$BRANCH"
           echo "BRANCH=$BRANCH" >> $GITHUB_ENV
 
+      # -----------------------------
+      # Update composer.json
+      # -----------------------------
       - name: Update composer.json
-        if: steps.check.outputs.skip == 'false'
         run: |
           jq ".version = \"$VERSION\"" composer.json > tmp.json
           mv tmp.json composer.json
 
-      # -------------------------------------------
+      # -----------------------------
       # Commit and Push
-      # -------------------------------------------
+      # ADD "release: yes" as required
+      # -----------------------------
       - name: Commit and Push
-        if: steps.check.outputs.skip == 'false'
         run: |
           git config user.name "GitHub Actions Bot"
           git config user.email "ci-bot@github.com"
@@ -69,23 +76,20 @@ jobs:
           git add composer.json
           git commit -m "chore: sync version to v${VERSION} (release: yes)"
           git push origin "$BRANCH"
-          
-   # ----------------------------
+
+      # -----------------------------
       # Create Pull Request
-      # ----------------------------
+      # -----------------------------
       - name: Create Pull Request
         uses: peter-evans/create-pull-request@v5
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.DISPATCH }}
           title: "Sync version to v${{ env.VERSION }}"
           body: |
-            Auto-synced update from **Main Repo**
+            Auto-synced version update from **main repository**.
 
-            **Updated:**
-            - composer.json
-            - CHANGELOG.md
+            Updated version to **v${{ env.VERSION }}** in composer.json.
 
-            **New Version:** v${{ env.VERSION }}
+            **release: yes**
           branch: ${{ env.BRANCH }}
           base: main
-      
