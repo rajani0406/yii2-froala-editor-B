@@ -64,34 +64,25 @@ jobs:
           jq ".version = \"$VERSION\"" composer.json > tmp.json
           mv tmp.json composer.json
 
-      # -----------------------------
-      # Commit and Push
-      # ADD "release: yes" as required
-      # -----------------------------
+      # Commit + push
       - name: Commit and Push
+        if: steps.check.outputs.skip == 'false'
         run: |
           git config user.name "GitHub Actions Bot"
           git config user.email "ci-bot@github.com"
-
           git add composer.json
-          git commit -m "chore: sync version to v${VERSION} (release: yes)"
+          git commit -m "chore: sync version to v${VERSION}"
           git push origin "$BRANCH"
 
-      # ----------------------------
-      # Create Pull Request
-      # ----------------------------
+      # Create Pull Request (NO auto commit, NO auto overwrite)
       - name: Create Pull Request
+        if: steps.check.outputs.skip == 'false'
         uses: peter-evans/create-pull-request@v5
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           title: "Sync version to v${{ env.VERSION }}"
-          body: |
-            Auto-synced update from **Main Repo**
-
-            **Updated:**
-            - composer.json
-            - CHANGELOG.md
-
-            **New Version:** v${{ env.VERSION }}
+          body: "Auto-synced version update."
           branch: ${{ env.BRANCH }}
           base: main
+          commit-message: ""   # prevents resetting your commit
+          delete-branch: false
