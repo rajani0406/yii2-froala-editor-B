@@ -77,19 +77,21 @@ jobs:
           git commit -m "chore: sync version to v${VERSION} (release: yes)"
           git push origin "$BRANCH"
 
-      # -----------------------------
+      # ----------------------------
       # Create Pull Request
-      # -----------------------------
+      # ----------------------------
       - name: Create Pull Request
         uses: peter-evans/create-pull-request@v5
         with:
-          token: ${{ secrets.DISPATCH }}
+          token: ${{ secrets.GITHUB_TOKEN }}
           title: "Sync version to v${{ env.VERSION }}"
           body: |
-            Auto-synced version update from **main repository**.
+            Auto-synced update from **Main Repo**
 
-            Updated version to **v${{ env.VERSION }}** in composer.json.
+            **Updated:**
+            - composer.json
+            - CHANGELOG.md
 
-            **release: yes**
+            **New Version:** v${{ env.VERSION }}
           branch: ${{ env.BRANCH }}
           base: main
