@@ -13,59 +13,55 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # -----------------------------
-      # Checkout repository
-      # -----------------------------
+
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # -----------------------------
-      # Read incoming version
-      # -----------------------------
       - name: Set VERSION from dispatch event
         run: |
           echo "VERSION=${{ github.event.client_payload.version }}" >> $GITHUB_ENV
           echo "Incoming version: $VERSION"
 
-      # -----------------------------
-      # Read local version from composer.json
-      # -----------------------------
       - name: Read current version
-        id: local
+        id: read_local
         run: |
           CURRENT=$(jq -r '.version' composer.json)
           echo "CURRENT_VERSION=$CURRENT" >> $GITHUB_ENV
           echo "Local version: $CURRENT | Incoming: $VERSION"
 
-      # -----------------------------
-      # STOP JOB IF VERSION MATCHES
-      # -----------------------------
-      - name: Skip if version matches
+      # --------------------------------------------
+      # STEP THAT DECIDES WHETHER TO CONTINUE OR STOP
+      # --------------------------------------------
+      - name: Compare versions
+        id: compare
         run: |
           if [ "$VERSION" = "$CURRENT_VERSION" ]; then
-            echo "✔ Versions match → No action required."
-            exit 0
+            echo "match=true" >> $GITHUB_OUTPUT
+            echo "✔ Versions match → stopping workflow."
+          else
+            echo "match=false" >> $GITHUB_OUTPUT
+            echo "✘ Versions differ → continuing workflow."
           fi
 
-      # -----------------------------
-      # Create feature branch
-      # -----------------------------
+      # ------------------------------------------------
+      # ALL REMAINING STEPS RUN ONLY IF VERSION CHANGES
+      # ------------------------------------------------
+
       - name: Create new branch
+        if: steps.compare.outputs.match == 'false'
         run: |
           BRANCH="sync-version-v${VERSION}"
           git checkout -b "$BRANCH"
           echo "BRANCH=$BRANCH" >> $GITHUB_ENV
 
-      # -----------------------------
-      # Update composer.json
-      # -----------------------------
       - name: Update composer.json
+        if: steps.compare.outputs.match == 'false'
         run: |
           jq ".version = \"$VERSION\"" composer.json > tmp.json
           mv tmp.json composer.json
 
-      # Commit + push
       - name: Commit and Push
+        if: steps.compare.outputs.match == 'false'
         run: |
           git config user.name "GitHub Actions Bot"
           git config user.email "ci-bot@github.com"
