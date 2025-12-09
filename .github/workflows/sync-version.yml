@@ -17,51 +17,49 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set VERSION from dispatch event
+      - name: Load incoming version
         run: |
           echo "VERSION=${{ github.event.client_payload.version }}" >> $GITHUB_ENV
           echo "Incoming version: $VERSION"
 
-      - name: Read current version
-        id: read_local
+      - name: Read current version from composer.json
         run: |
           CURRENT=$(jq -r '.version' composer.json)
           echo "CURRENT_VERSION=$CURRENT" >> $GITHUB_ENV
           echo "Local version: $CURRENT | Incoming: $VERSION"
 
       # --------------------------------------------
-      # STEP THAT DECIDES WHETHER TO CONTINUE OR STOP
+      # DECIDE WHETHER TO RUN OR STOP
       # --------------------------------------------
-      - name: Compare versions
-        id: compare
+      - name: Check version difference
         run: |
           if [ "$VERSION" = "$CURRENT_VERSION" ]; then
-            echo "match=true" >> $GITHUB_OUTPUT
-            echo "✔ Versions match → stopping workflow."
+            echo "SHOULD_RUN=false" >> $GITHUB_ENV
+            echo "✔ Versions match → pipeline will stop."
           else
-            echo "match=false" >> $GITHUB_OUTPUT
-            echo "✘ Versions differ → continuing workflow."
+            echo "SHOULD_RUN=true" >> $GITHUB_ENV
+            echo "✘ Versions differ → pipeline continues."
           fi
 
-      # ------------------------------------------------
-      # ALL REMAINING STEPS RUN ONLY IF VERSION CHANGES
-      # ------------------------------------------------
+      # --------------------------------------------
+      # STEPS BELOW RUN ONLY IF VERSION CHANGED
+      # --------------------------------------------
 
-      - name: Create new branch
-        if: steps.compare.outputs.match == 'false'
+      - name: Create branch
+        if: env.SHOULD_RUN == 'true'
         run: |
           BRANCH="sync-version-v${VERSION}"
-          git checkout -b "$BRANCH"
           echo "BRANCH=$BRANCH" >> $GITHUB_ENV
+          git checkout -b "$BRANCH"
 
       - name: Update composer.json
-        if: steps.compare.outputs.match == 'false'
+        if: env.SHOULD_RUN == 'true'
         run: |
           jq ".version = \"$VERSION\"" composer.json > tmp.json
           mv tmp.json composer.json
 
-      - name: Commit and Push
-        if: steps.compare.outputs.match == 'false'
+      - name: Commit and push changes
+        if: env.SHOULD_RUN == 'true'
         run: |
           git config user.name "GitHub Actions Bot"
           git config user.email "ci-bot@github.com"
@@ -69,8 +67,8 @@ jobs:
           git commit -m "chore: sync version to v${VERSION}"
           git push origin "$BRANCH"
 
-      # Create Pull Request (NO auto commit, NO auto overwrite)
-      - name: Create Pull Request using GH CLI
+      - name: Create Pull Request
+        if: env.SHOULD_RUN == 'true'
         run: |
           gh pr create \
             --base main \
