@@ -4,7 +4,7 @@
 [![Packagist](https://img.shields.io/packagist/dt/froala/yii2-froala-editor.svg)](https://packagist.org/packages/froala/yii2-froala-editor)
 
 >Yii 2 widget for Froala Wysiwyg editor.
-
+ 
 ## Installation
 
 The preferred way to install this extension is through [composer](http://getcomposer.org/download/).
