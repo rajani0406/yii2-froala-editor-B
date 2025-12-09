@@ -73,13 +73,13 @@ jobs:
           git commit -m "chore: sync version to v${VERSION}"
           git push origin "$BRANCH"
 
-      # Create Pull Request (NO auto commit, NO auto overwrite)
-      #- name: Create Pull Request using GH CLI
-      #  run: |
-      #    gh pr create \
-      #      --base main \
-         #     --head "$BRANCH" \
-            #  --title "Sync version to v${VERSION}" \
-             # --body "Auto-synced version update."
-         # env:
-           # GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+       #Create Pull Request (NO auto commit, NO auto overwrite)
+      - name: Create Pull Request using GH CLI
+        run: |
+         gh pr create \
+            --base main \
+              --head "$BRANCH" \
+              --title "Sync version to v${VERSION}" \
+              --body "Auto-synced version update."
+          env:
+            GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
