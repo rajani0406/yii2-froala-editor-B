@@ -2,13 +2,9 @@ name: Auto Release on Merge
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened, closed]
+    types: [closed]
     branches:
       - main
-
-  workflow_run:
-    workflows: ["Sync Version from Main Repo"]
-    types: [completed]
 
 permissions:
   contents: write
@@ -16,50 +12,40 @@ permissions:
 
 jobs:
 
-  validate_pr:
-    if: github.event_name == 'pull_request' && github.event.action != 'closed'
+  create_release:
+    # Only run when PR is merged AND merge commit message contains release: yes
+    if: >
+      github.event_name == 'pull_request' &&
+      github.event.action == 'closed' &&
+      github.event.pull_request.merged == true
     runs-on: ubuntu-latest
 
     steps:
-      - name: Check commit messages for release flag
-        id: validate
+      - name: Check merge commit message includes release:yes
+        id: check_message
         uses: actions/github-script@v6
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
-            const pr = context.payload.pull_request;
-            const commits = await github.rest.pulls.listCommits({
+            const mergeSha = context.payload.pull_request.merge_commit_sha;
+
+            const commit = await github.rest.repos.getCommit({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              pull_number: pr.number
+              ref: mergeSha
             });
 
-            const hasRelease = commits.data.some(c =>
-              /release:\s*yes/i.test(c.commit.message)
-            );
+            const message = commit.data.commit.message;
 
-            core.setOutput("valid", hasRelease ? "true" : "false");
+            const isRelease = /release:\s*yes/i.test(message);
+            core.setOutput("release", isRelease ? "true" : "false");
 
-      - name: Fail if no release flag
-        if: steps.validate.outputs.valid == 'false'
+      - name: Stop if merge commit has no release flag
+        if: steps.check_message.outputs.release == 'false'
         run: |
-          echo "PR missing 'release: yes' in commit message"
-          exit 1
+          echo "Merge commit does NOT contain 'release: yes'. Skipping release."
+          exit 0
 
-
-  create_release:
-    # Only run when PR merged AND release flag exists
-    if: >
-      github.event_name == 'pull_request' &&
-      github.event.action == 'closed' &&
-      github.event.pull_request.merged == true &&
-      (
-        contains(github.event.pull_request.title, 'release: yes') ||
-        contains(github.event.pull_request.body, 'release: yes')
-      )
-    runs-on: ubuntu-latest
-
-    steps:
       - name: Checkout main
         uses: actions/checkout@v4
         with:
@@ -72,6 +58,7 @@ jobs:
           echo "VERSION=$VERSION" >> $GITHUB_ENV
 
       - name: Create GitHub Release
+        if: steps.check_message.outputs.release == 'true'
         uses: actions/create-release@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
